@@ -132,9 +132,6 @@ func buildNextBlock(t *testing.T, _bor consensus.Engine, chain *core.BlockChain,
 		header.Difficulty = new(big.Int).SetInt64(int64(len(currentValidators)))
 	}
 
-	dif := bor.Difficulty(valset.NewValidatorSet(currentValidators), common.BytesToAddress(signer))
-	//header.Difficulty.SetUint64(dif)
-
 	if isSprintEnd {
 		sort.Sort(valset.ValidatorsByAddress(currentValidators))
 
@@ -222,6 +219,7 @@ func (b *blockGen) setCoinbase(addr common.Address) {
 		if len(b.txs) > 0 {
 			panic("coinbase must be set before adding transactions")
 		}
+
 		panic("coinbase can only be set once")
 	}
 

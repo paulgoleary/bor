@@ -354,7 +354,7 @@ func BenchmarkBorMining(b *testing.B) {
 		return len(task.receipts) == 0
 	}
 
-	// fullfill tx pool
+	// fulfill tx pool
 	const (
 		totalGas    = testGas + params.TxGas
 		totalBlocks = 10
@@ -362,11 +362,17 @@ func BenchmarkBorMining(b *testing.B) {
 
 	var txInBlock = int(back.genesis.GasLimit/totalGas) + 1
 
-	// fullfill a tx pool
+	// fulfill a tx pool
 	// a bit risky
 	for i := 0; i < totalBlocks*txInBlock; i++ {
-		back.txPool.AddLocal(back.newRandomTx(true))
-		back.txPool.AddLocal(back.newRandomTx(false))
+		err := back.txPool.AddLocal(back.newRandomTx(true))
+		if err != nil {
+			b.Fatalf("failed to add txn true %v", err)
+		}
+		err = back.txPool.AddLocal(back.newRandomTx(false))
+		if err != nil {
+			b.Fatalf("failed to add txn false %v", err)
+		}
 	}
 
 	// Wait for mined blocks.
@@ -385,6 +391,7 @@ func BenchmarkBorMining(b *testing.B) {
 			if _, err := chain.InsertChain([]*types.Block{block}); err != nil {
 				b.Fatalf("failed to insert new mined block %d: %v", block.NumberU64(), err)
 			}
+
 			b.Log("block", block.NumberU64(), "txs", block.Transactions().Len(), "gasUsed", block.GasUsed(), "gasLimit", block.GasLimit())
 		case <-time.After(5 * time.Second): // Worker needs 1s to include new changes.
 			b.Fatalf("timeout")

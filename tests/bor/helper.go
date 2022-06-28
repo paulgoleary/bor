@@ -133,12 +133,9 @@ func buildNextBlock(t *testing.T, _bor consensus.Engine, chain *core.BlockChain,
 	}
 
 	dif := bor.Difficulty(valset.NewValidatorSet(currentValidators), common.BytesToAddress(signer))
-	fmt.Println("=======================SNAP-HELPER", dif, valset.NewValidatorSet(currentValidators).String(), common.BytesToAddress(signer).String())
 	//header.Difficulty.SetUint64(dif)
-	fmt.Println("HELPER", number, isSpanStart, isSprintEnd, len(currentValidators), header.Difficulty.Uint64(), dif)
 
 	if isSprintEnd {
-		fmt.Println("!!!!!!!!!!!!!!!!!!!!!")
 		sort.Sort(valset.ValidatorsByAddress(currentValidators))
 
 		validatorBytes := make([]byte, len(currentValidators)*validatorHeaderBytesLength)

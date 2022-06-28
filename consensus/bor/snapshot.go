@@ -2,7 +2,6 @@ package bor
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/consensus/bor/valset"
 
@@ -133,7 +132,6 @@ func (s *Snapshot) apply(headers []*types.Header) (*Snapshot, error) {
 
 		// check if signer is in validator set
 		if !snap.ValidatorSet.HasAddress(signer.Bytes()) {
-			fmt.Println("UnauthorizedSignerError-3", number-1, signer.String(), snap.ValidatorSet.Validators)
 			return nil, &UnauthorizedSignerError{number, signer.Bytes()}
 		}
 
@@ -222,6 +220,5 @@ func Difficulty(validatorSet *valset.ValidatorSet, signer common.Address) uint64
 		tempIndex = tempIndex + totalValidators
 	}
 
-	fmt.Println("=======================SNAP", uint64(totalValidators-(tempIndex-proposerIndex)), validatorSet.String(), signer.String())
 	return uint64(totalValidators - (tempIndex - proposerIndex))
 }

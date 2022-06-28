@@ -12,11 +12,15 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/sha3"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/bor"
 	"github.com/ethereum/go-ethereum/consensus/bor/clerk"
+	"github.com/ethereum/go-ethereum/consensus/bor/heimdall/checkpoint"
+	"github.com/ethereum/go-ethereum/consensus/bor/heimdall/span"
 	"github.com/ethereum/go-ethereum/consensus/bor/valset"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
@@ -27,7 +31,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/tests/bor/mocks"
-
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/sha3"
 )
@@ -38,8 +41,19 @@ func TestInsertingSpanSizeBlocks(t *testing.T) {
 	engine := init.ethereum.Engine()
 	_bor := engine.(*bor.Bor)
 
+	defer _bor.Close()
+
 	h, heimdallSpan, ctrl := getMockedHeimdallClient(t)
 	defer ctrl.Finish()
+
+	_, span := loadSpanFromFile(t)
+
+	h.EXPECT().Close().AnyTimes()
+	h.EXPECT().FetchLatestCheckpoint().Return(&checkpoint.Checkpoint{
+		Proposer:   span.SelectedProducers[0].Address,
+		StartBlock: big.NewInt(0),
+		EndBlock:   big.NewInt(int64(spanSize)),
+	}, nil).AnyTimes()
 
 	_bor.SetHeimdallClient(h)
 
@@ -73,6 +87,8 @@ func TestFetchStateSyncEvents(t *testing.T) {
 	engine := init.ethereum.Engine()
 	_bor := engine.(*bor.Bor)
 
+	defer _bor.Close()
+
 	// A. Insert blocks for 0th sprint
 	db := init.ethereum.ChainDb()
 	block := init.genesis.ToBlock(db)
@@ -97,6 +113,7 @@ func TestFetchStateSyncEvents(t *testing.T) {
 	defer ctrl.Finish()
 
 	h := mocks.NewMockIHeimdallClient(ctrl)
+	h.EXPECT().Close().AnyTimes()
 	h.EXPECT().Span(uint64(1)).Return(&res.Result, nil).AnyTimes()
 
 	// B.2 Mock State Sync events
@@ -122,6 +139,8 @@ func TestFetchStateSyncEvents_2(t *testing.T) {
 	engine := init.ethereum.Engine()
 	_bor := engine.(*bor.Bor)
 
+	defer _bor.Close()
+
 	// Mock /bor/span/1
 	res, _ := loadSpanFromFile(t)
 
@@ -132,6 +151,7 @@ func TestFetchStateSyncEvents_2(t *testing.T) {
 	defer ctrl.Finish()
 
 	h := mocks.NewMockIHeimdallClient(ctrl)
+	h.EXPECT().Close().AnyTimes()
 	h.EXPECT().Span(uint64(1)).Return(&res.Result, nil).AnyTimes()
 
 	// Mock State Sync events
@@ -207,9 +227,12 @@ func TestOutOfTurnSigning(t *testing.T) {
 	engine := init.ethereum.Engine()
 	_bor := engine.(*bor.Bor)
 
+	defer _bor.Close()
+
 	h, _, ctrl := getMockedHeimdallClient(t)
 	defer ctrl.Finish()
 
+	h.EXPECT().Close().AnyTimes()
 	_bor.SetHeimdallClient(h)
 
 	db := init.ethereum.ChainDb()
@@ -219,16 +242,6 @@ func TestOutOfTurnSigning(t *testing.T) {
 
 	// add the block producer
 	currentValidators := res.Result.ValidatorSet.Validators
-	fmt.Println("START=VALS", currentValidators)
-	/*
-		fmt.Println("START!!!", res.Result.ValidatorSet.Validators)
-		res.Result.ValidatorSet.Validators = append(res.Result.ValidatorSet.Validators, valset.NewValidator(addr2, 10))
-
-		currentValidators := []*valset.Validator{
-			valset.NewValidator(addr2, 100),
-			valset.NewValidator(addr, 10),
-		}
-	*/
 
 	for i := uint64(1); i < spanSize; i++ {
 		block = buildNextBlock(t, _bor, chain, block, nil, init.genesis.Config.Bor, nil, currentValidators)
@@ -262,6 +275,7 @@ func TestOutOfTurnSigning(t *testing.T) {
 	sign(t, header, signerKey, init.genesis.Config.Bor)
 
 	block = types.NewBlockWithHeader(header)
+
 	_, err = chain.InsertChain([]*types.Block{block})
 	assert.Equal(t,
 		*err.(*bor.WrongDifficultyError),
@@ -270,6 +284,7 @@ func TestOutOfTurnSigning(t *testing.T) {
 	header.Difficulty = new(big.Int).SetUint64(expectedDifficulty)
 	sign(t, header, signerKey, init.genesis.Config.Bor)
 	block = types.NewBlockWithHeader(header)
+
 	_, err = chain.InsertChain([]*types.Block{block})
 	assert.Nil(t, err)
 }
@@ -280,8 +295,12 @@ func TestSignerNotFound(t *testing.T) {
 	engine := init.ethereum.Engine()
 	_bor := engine.(*bor.Bor)
 
+	defer _bor.Close()
+
 	h, _, ctrl := getMockedHeimdallClient(t)
 	defer ctrl.Finish()
+
+	h.EXPECT().Close().AnyTimes()
 
 	_bor.SetHeimdallClient(h)
 
@@ -301,6 +320,52 @@ func TestSignerNotFound(t *testing.T) {
 	assert.Equal(t,
 		*err.(*bor.UnauthorizedSignerError),
 		bor.UnauthorizedSignerError{Number: 0, Signer: addr.Bytes()})
+}
+
+func getMockedHeimdallClient(t *testing.T) (*mocks.MockIHeimdallClient, *span.HeimdallSpan, *gomock.Controller) {
+	ctrl := gomock.NewController(t)
+	h := mocks.NewMockIHeimdallClient(ctrl)
+
+	_, heimdallSpan := loadSpanFromFile(t)
+
+	h.EXPECT().Span(uint64(1)).Return(heimdallSpan, nil).AnyTimes()
+
+	h.EXPECT().StateSyncEvents(gomock.Any(), gomock.Any()).
+		Return([]*clerk.EventRecordWithTime{getSampleEventRecord(t)}, nil).AnyTimes()
+
+	return h, heimdallSpan, ctrl
+}
+
+func generateFakeStateSyncEvents(sample *clerk.EventRecordWithTime, count int) []*clerk.EventRecordWithTime {
+	events := make([]*clerk.EventRecordWithTime, count)
+	event := *sample
+	event.ID = 1
+	events[0] = &clerk.EventRecordWithTime{}
+	*events[0] = event
+	for i := 1; i < count; i++ {
+		event.ID = uint64(i)
+		event.Time = event.Time.Add(1 * time.Second)
+		events[i] = &clerk.EventRecordWithTime{}
+		*events[i] = event
+	}
+	return events
+}
+
+func buildStateEvent(sample *clerk.EventRecordWithTime, id uint64, timeStamp int64) *clerk.EventRecordWithTime {
+	event := *sample
+	event.ID = id
+	event.Time = time.Unix(timeStamp, 0)
+	return &event
+}
+
+func getSampleEventRecord(t *testing.T) *clerk.EventRecordWithTime {
+	eventRecords := stateSyncEventsPayload(t)
+	eventRecords.Result[0].Time = time.Unix(1, 0)
+	return eventRecords.Result[0]
+}
+
+func getEventRecords(t *testing.T) []*clerk.EventRecordWithTime {
+	return stateSyncEventsPayload(t).Result
 }
 
 // TestEIP1559Transition tests the following:

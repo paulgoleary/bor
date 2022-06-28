@@ -606,7 +606,6 @@ func (c *Bor) verifySeal(chain consensus.ChainHeaderReader, header *types.Header
 
 	if !snap.ValidatorSet.HasAddress(signer.Bytes()) {
 		// Check the UnauthorizedSignerError.Error() msg to see why we pass number-1
-		fmt.Println("UnauthorizedSignerError-2", number-1, signer.String(), snap.ValidatorSet.Validators)
 		return &UnauthorizedSignerError{number - 1, signer.Bytes()}
 	}
 
@@ -961,7 +960,9 @@ func (c *Bor) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 // Close implements consensus.Engine. It's a noop for bor as there are no background threads.
 func (c *Bor) Close() error {
 	c.closeOnce.Do(func() {
-		c.HeimdallClient.Close()
+		if c.HeimdallClient != nil {
+			c.HeimdallClient.Close()
+		}
 	})
 
 	return nil
@@ -1107,6 +1108,8 @@ func (c *Bor) CommitStates(
 
 		lastStateID++
 	}
+
+	log.Info("StateSyncData", "Gas", totalGas, "Block-number", number, "LastStateID", lastStateID, "TotalRecords", len(eventRecords))
 
 	return stateSyncs, nil
 }

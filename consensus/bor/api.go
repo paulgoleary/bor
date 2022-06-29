@@ -298,3 +298,8 @@ func (api *API) initializeRootHashCache() error {
 func getRootHashKey(start uint64, end uint64) string {
 	return strconv.FormatUint(start, 10) + "-" + strconv.FormatUint(end, 10)
 }
+
+// TODO: completely experimental !
+func (api *API) GetRawStorage(storeHash common.Hash) ([]byte, error) {
+	return api.bor.db.Get(storeHash.Bytes())
+}
